@@ -1,7 +1,7 @@
 'use client'
 import { authedFetch } from '@/components/providers/providers'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   ArrowLeft,
@@ -50,12 +50,33 @@ export function CheckoutView() {
     addresses.find((a) => a.isDefault) ||
     null
 
+  useEffect(() => {
+    if (authLoading || !profile || profile.phone?.trim()) return
+    try {
+      localStorage.setItem('apna-baithak-require-phone', '1')
+    } catch {}
+    toast.error('Contact number is required before checkout')
+    setView('profile')
+  }, [authLoading, profile, setView])
+
   const handlingFee = FEES.handlingFee
   const deliveryFee = FEES.deliveryFee
   const gst = Math.round((subtotal + handlingFee + deliveryFee) * FEES.gstRate)
   const total = subtotal + handlingFee + deliveryFee + gst
 
   async function placeOrder() {
+    if (authLoading) {
+      toast.error('Please wait while your account loads')
+      return
+    }
+    if (!profile?.phone?.trim()) {
+      try {
+        localStorage.setItem('apna-baithak-require-phone', '1')
+      } catch {}
+      toast.error('Contact number is required before placing an order')
+      setView('profile')
+      return
+    }
     if (!chosen) {
       toast.error('Please choose a delivery address')
       setView('location')
@@ -83,11 +104,6 @@ export function CheckoutView() {
         throw new Error(j.error || 'Failed to place order')
       }
       const { order } = (await res.json()) as { order: Order }
-      // For UPI orders, navigate to the UPI payment screen (which handles the
-      // deep link, QR, countdown, screenshot upload + Gemini verification,
-      // then auto-redirects to order confirmation).
-      // For COD, go directly to the order confirmation screen (history replaced
-      // so back button doesn't return to checkout).
       if (paymentMode === 'UPI') {
         goToUpiPayment(order)
         toast.success(`Order ${order.orderNumber} placed! Complete your UPI payment.`)
@@ -115,7 +131,6 @@ export function CheckoutView() {
       </header>
 
       <div className="flex flex-col gap-4 px-4">
-        {/* Address */}
         <section>
           <h2 className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
             Delivery Address
@@ -153,7 +168,6 @@ export function CheckoutView() {
           )}
         </section>
 
-        {/* Payment mode */}
         <section>
           <h2 className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
             Payment Mode
@@ -192,7 +206,6 @@ export function CheckoutView() {
           </div>
         </section>
 
-        {/* Order notes */}
         <section>
           <h2 className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
             Order Notes (optional)
@@ -206,7 +219,6 @@ export function CheckoutView() {
           />
         </section>
 
-        {/* Bill */}
         <section className="rounded-2xl border border-border/60 bg-card p-4 shadow-sm">
           <h2 className="mb-3 text-sm font-bold text-foreground">Bill Details</h2>
           <dl className="flex flex-col gap-2 text-sm">
@@ -240,11 +252,10 @@ export function CheckoutView() {
         <div className="h-24" />
       </div>
 
-      {/* Sticky place order bar */}
       <div className="sticky bottom-0 z-20 border-t border-border bg-background px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
         <button
           onClick={placeOrder}
-          disabled={placing || !chosen || lines.length === 0}
+          disabled={placing || authLoading || !profile?.phone?.trim() || !chosen || lines.length === 0}
           className="flex w-full items-center justify-between gap-3 rounded-xl bg-brand px-5 py-3.5 text-brand-foreground shadow-md transition active:scale-[0.99] disabled:opacity-50"
         >
           <span className="flex items-center gap-2 text-sm font-bold">
