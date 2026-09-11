@@ -1,7 +1,7 @@
 'use client'
 import { authedFetch } from '@/components/providers/providers'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   ArrowLeft,
@@ -38,6 +38,16 @@ export function ProfileView() {
   const clearCart = useCart((s) => s.clear)
   const [editOpen, setEditOpen] = useState(false)
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    let required = false
+    try {
+      required = localStorage.getItem('apna-baithak-require-phone') === '1'
+      if (required) localStorage.removeItem('apna-baithak-require-phone')
+    } catch {}
+    if (required) setEditOpen(true)
+  }, [])
+
   const { data } = useQuery({
     queryKey: ['orders'],
     queryFn: async () => {
@@ -60,9 +70,6 @@ export function ProfileView() {
   })
   const addresses = addrData?.addresses ?? []
 
-  // While the session is still being checked on first load, don't bounce
-  // to the "not signed in" CTA — the user may actually be logged in but
-  // the cookie hydration just hasn't completed yet.
   if (authLoading) {
     return (
       <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4 px-6 py-20 text-center">
@@ -100,7 +107,6 @@ export function ProfileView() {
         </button>
       </header>
 
-      {/* Profile hero */}
       <section className="flex flex-col items-center px-5 pt-2 pb-6 text-center">
         <div className="grid h-24 w-24 place-items-center rounded-full bg-brand text-3xl font-extrabold text-brand-foreground shadow-md">
           {profile.avatarUrl ? (
@@ -141,7 +147,6 @@ export function ProfileView() {
         </div>
       </section>
 
-      {/* Edit Profile modal */}
       <AnimatePresence>
         {editOpen && profile && (
           <EditProfileModal
@@ -152,7 +157,6 @@ export function ProfileView() {
         )}
       </AnimatePresence>
 
-      {/* Quick-access tiles */}
       <section className="px-4">
         <h2 className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Account</h2>
         <div className="overflow-hidden rounded-2xl border border-border/60 bg-card shadow-sm">
@@ -172,10 +176,8 @@ export function ProfileView() {
         </div>
       </section>
 
-      {/* Favorites / Wishlist */}
       <FavoritesSection />
 
-      {/* Order history */}
       <section className="mt-6 px-4">
         <div className="mb-2 flex items-center justify-between">
           <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -219,7 +221,6 @@ export function ProfileView() {
         )}
       </section>
 
-      {/* Restaurant info */}
       <section className="mt-6 px-4">
         <h2 className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
           Restaurant
@@ -270,7 +271,6 @@ function FavoritesSection() {
   const toggle = useFavorites((s) => s.toggle)
   const openItem = useApp((s) => s.openItem)
   const addItem = useCart((s) => s.addItem)
-  const setView = useApp((s) => s.setView)
 
   if (favorites.length === 0) return null
 
@@ -337,12 +337,6 @@ function FavoritesSection() {
   )
 }
 
-/**
- * Edit Profile modal — lets the customer update their name and contact number.
- * Uses the same 10-digit Indian mobile validation as the signup form.
- * On save, calls updateProfile (PATCH /api/auth/me) which updates both
- * Supabase user_metadata and the Turso Customer mirror row.
- */
 function EditProfileModal({
   profile,
   updateProfile,
@@ -352,8 +346,6 @@ function EditProfileModal({
   updateProfile: (data: { name?: string; phone?: string }) => Promise<{ error: string | null }>
   onClose: () => void
 }) {
-  // Pre-fill with current values. Strip +91 only when it is a country code,
-  // not when "91" is the first two digits of a valid 10-digit number.
   const currentPhoneDigits = profile.phone
     ? (() => {
         const digits = profile.phone.replace(/\D/g, '')
@@ -373,8 +365,6 @@ function EditProfileModal({
       toast.error('Name cannot be empty')
       return
     }
-    // Validate phone. Strip country code/leading zero only when the input
-    // clearly includes them; keep a normal 10-digit number unchanged.
     const rawDigits = phone.replace(/\D/g, '')
     const digits =
       rawDigits.length === 12 && rawDigits.startsWith('91')
@@ -419,7 +409,6 @@ function EditProfileModal({
         className="flex w-full max-w-md flex-col overflow-hidden rounded-t-3xl bg-card shadow-2xl sm:rounded-3xl"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
         <div className="flex items-center justify-between border-b border-border p-4">
           <h2 className="text-base font-bold text-foreground">Edit Profile</h2>
           <button
@@ -431,9 +420,7 @@ function EditProfileModal({
           </button>
         </div>
 
-        {/* Body */}
         <div className="flex flex-col gap-4 p-4">
-          {/* Name */}
           <label className="block">
             <span className="mb-1 block text-xs font-bold text-foreground">Full Name</span>
             <div className="flex items-center gap-2 rounded-xl bg-muted px-3 py-2.5 focus-within:ring-2 focus-within:ring-brand/40">
@@ -448,7 +435,6 @@ function EditProfileModal({
             </div>
           </label>
 
-          {/* Phone */}
           <label className="block">
             <span className="mb-1 block text-xs font-bold text-foreground">
               Contact Number <span className="text-red-500">*</span>
@@ -473,7 +459,6 @@ function EditProfileModal({
             </span>
           </label>
 
-          {/* Email (read-only) */}
           <label className="block">
             <span className="mb-1 block text-xs font-bold text-muted-foreground">Email</span>
             <div className="flex items-center gap-2 rounded-xl bg-muted/50 px-3 py-2.5">
@@ -490,7 +475,6 @@ function EditProfileModal({
           </label>
         </div>
 
-        {/* Footer */}
         <div className="flex gap-2 border-t border-border p-3">
           <button
             onClick={onClose}
