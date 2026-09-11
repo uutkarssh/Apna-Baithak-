@@ -104,7 +104,6 @@ export function ProfileView() {
       <section className="flex flex-col items-center px-5 pt-2 pb-6 text-center">
         <div className="grid h-24 w-24 place-items-center rounded-full bg-brand text-3xl font-extrabold text-brand-foreground shadow-md">
           {profile.avatarUrl ? (
-             
             <img src={profile.avatarUrl} alt={profile.name ?? ''} className="h-full w-full rounded-full object-cover" />
           ) : (
             initial
@@ -296,7 +295,6 @@ function FavoritesSection() {
                 className="grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-xl bg-muted"
               >
                 {fav.imageUrl ? (
-                   
                   <img src={fav.imageUrl} alt={fav.name} className="h-full w-full object-cover" />
                 ) : (
                   <UtensilsCrossed className="h-6 w-6 text-brand/40" />
@@ -354,9 +352,17 @@ function EditProfileModal({
   updateProfile: (data: { name?: string; phone?: string }) => Promise<{ error: string | null }>
   onClose: () => void
 }) {
-  // Pre-fill with current values. For phone, strip the +91 prefix for editing.
+  // Pre-fill with current values. Strip +91 only when it is a country code,
+  // not when "91" is the first two digits of a valid 10-digit number.
   const currentPhoneDigits = profile.phone
-    ? profile.phone.replace(/\D/g, '').replace(/^91/, '')
+    ? (() => {
+        const digits = profile.phone.replace(/\D/g, '')
+        return digits.length === 12 && digits.startsWith('91')
+          ? digits.slice(2)
+          : digits.length === 11 && digits.startsWith('0')
+            ? digits.slice(1)
+            : digits
+      })()
     : ''
   const [name, setName] = useState(profile.name ?? '')
   const [phone, setPhone] = useState(currentPhoneDigits)
@@ -367,8 +373,15 @@ function EditProfileModal({
       toast.error('Name cannot be empty')
       return
     }
-    // Validate phone (same logic as signup)
-    const digits = phone.replace(/\D/g, '').replace(/^(91|0)?/, '')
+    // Validate phone. Strip country code/leading zero only when the input
+    // clearly includes them; keep a normal 10-digit number unchanged.
+    const rawDigits = phone.replace(/\D/g, '')
+    const digits =
+      rawDigits.length === 12 && rawDigits.startsWith('91')
+        ? rawDigits.slice(2)
+        : rawDigits.length === 11 && rawDigits.startsWith('0')
+          ? rawDigits.slice(1)
+          : rawDigits
     if (!/^[6-9]\d{9}$/.test(digits)) {
       toast.error('Please enter a valid 10-digit Indian mobile number')
       return
