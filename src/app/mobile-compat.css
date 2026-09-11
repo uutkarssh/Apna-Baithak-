@@ -1,0 +1,67 @@
+/*
+ * Android "Desktop site" compatibility.
+ *
+ * Chrome can report a desktop-sized CSS viewport on a touch phone. Tailwind's
+ * sm/md/lg breakpoints then select the desktop layout even though the user is
+ * still holding a phone. MobileLayoutGuard adds .apna-mobile-device to <html>
+ * for physical touch devices so the phone layout wins in that situation.
+ */
+
+.apna-mobile-device [class~="hidden"][class~="sm:grid"],
+.apna-mobile-device [class~="hidden"][class~="sm:flex"],
+.apna-mobile-device [class~="hidden"][class~="sm:block"],
+.apna-mobile-device [class~="hidden"][class~="md:grid"],
+.apna-mobile-device [class~="hidden"][class~="md:flex"],
+.apna-mobile-device [class~="hidden"][class~="lg:grid"],
+.apna-mobile-device [class~="hidden"][class~="lg:flex"] {
+  display: none !important;
+}
+
+/* Elements that are mobile-only in the normal Tailwind layout. */
+.apna-mobile-device [class~="sm:hidden"] {
+  display: flex !important;
+}
+
+/* Keep product/category grids compact like the real phone layout. */
+.apna-mobile-device [class~="sm:grid-cols-2"],
+.apna-mobile-device [class~="sm:grid-cols-3"],
+.apna-mobile-device [class~="sm:grid-cols-4"],
+.apna-mobile-device [class~="sm:grid-cols-5"],
+.apna-mobile-device [class~="sm:grid-cols-6"],
+.apna-mobile-device [class~="md:grid-cols-3"],
+.apna-mobile-device [class~="md:grid-cols-4"],
+.apna-mobile-device [class~="md:grid-cols-5"],
+.apna-mobile-device [class~="md:grid-cols-6"],
+.apna-mobile-device [class~="lg:grid-cols-4"],
+.apna-mobile-device [class~="lg:grid-cols-5"],
+.apna-mobile-device [class~="lg:grid-cols-6"],
+.apna-mobile-device [class~="xl:grid-cols-5"],
+.apna-mobile-device [class~="xl:grid-cols-6"],
+.apna-mobile-device [class~="2xl:grid-cols-6"] {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+}
+
+/* Category grids should not replace the phone's horizontal category rail. */
+.apna-mobile-device [class~="hidden"][class~="grid-cols-4"],
+.apna-mobile-device [class~="hidden"][class~="md:grid-cols-6"],
+.apna-mobile-device [class~="hidden"][class~="lg:grid-cols-8"] {
+  display: none !important;
+}
+
+/* Restore small-screen sizing where desktop-mode media queries enlarged it. */
+.apna-mobile-device [class~="sm:p-8"],
+.apna-mobile-device [class~="lg:p-10"] {
+  padding: 1.25rem !important;
+}
+
+.apna-mobile-device [class~="sm:text-3xl"],
+.apna-mobile-device [class~="lg:text-4xl"] {
+  font-size: 1.5rem !important;
+  line-height: 2rem !important;
+}
+
+.apna-mobile-device [class~="sm:h-20"],
+.apna-mobile-device [class~="sm:w-20"] {
+  height: 4rem !important;
+  width: 4rem !important;
+}
