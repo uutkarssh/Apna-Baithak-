@@ -1,13 +1,11 @@
 import type { Metadata, Viewport } from "next";
 import { Poppins, Outfit } from "next/font/google";
 import "./globals.css";
-import "./mobile-compat.css";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Providers } from "@/components/providers/providers";
 import { ServiceWorkerRegister } from "@/components/pwa/service-worker-register";
 import { InstallPrompt } from "@/components/pwa/install-prompt";
-import { MobileLayoutGuard } from "@/components/pwa/mobile-layout-guard";
 
 // Poppins (semibold) — used for headings, brand, prices, buttons
 const poppins = Poppins({
@@ -65,7 +63,6 @@ export default function RootLayout({
       <body
         className={`${poppins.variable} ${outfit.variable} antialiased bg-background text-foreground`}
       >
-        <MobileLayoutGuard />
         <Providers>{children}</Providers>
         <ServiceWorkerRegister />
         <InstallPrompt />
