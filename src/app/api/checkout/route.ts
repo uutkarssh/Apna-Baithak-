@@ -27,6 +27,22 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Customer profile missing.' }, { status: 400 })
   }
 
+  // A contact number is mandatory for delivery. Keep this check server-side
+  // so checkout cannot be bypassed by calling the API directly.
+  const phoneDigits = (customer.phone ?? '').replace(/\D/g, '')
+  const normalizedPhone =
+    phoneDigits.length === 12 && phoneDigits.startsWith('91')
+      ? phoneDigits.slice(2)
+      : phoneDigits.length === 11 && phoneDigits.startsWith('0')
+        ? phoneDigits.slice(1)
+        : phoneDigits
+  if (!/^[6-9]\d{9}$/.test(normalizedPhone)) {
+    return NextResponse.json(
+      { error: 'Contact number is required before checkout. Please add your 10-digit mobile number in your profile.' },
+      { status: 400 }
+    )
+  }
+
   const body = await req.json()
   const { items, addressId, paymentMode = 'COD', notes } = body ?? {}
 
