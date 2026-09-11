@@ -67,6 +67,22 @@ export function ApnaBaithakApp() {
   const hideTopBar = HIDE_TOPBAR_VIEWS.has(view)
   const showCartBar = mounted && count > 0 && CART_BAR_VIEWS.has(view)
 
+  // Always start a newly opened view at the top. This is especially important
+  // for Cart: tapping the floating "View Cart" bar should show the full cart
+  // header/address/items immediately, rather than preserving the Home scroll
+  // position and opening the Cart halfway down the page.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const frame = window.requestAnimationFrame(() => {
+      window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+      document.documentElement.scrollTop = 0
+      document.body.scrollTop = 0
+      const main = document.querySelector('main')
+      if (main instanceof HTMLElement) main.scrollTop = 0
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [view])
+
   // Handle shared-item deep links: /?item=<slug> opens the item detail view.
   // Runs once on mount (client-side only). The slug is validated by the item
   // detail view's own fetch — if it doesn't exist, the user sees a "not found"
