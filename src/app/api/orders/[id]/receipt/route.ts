@@ -5,13 +5,11 @@ import { isAdminAuthorized } from '@/lib/admin-guard'
 import { buildReceiptPdf, type ReceiptOrder } from '@/lib/receipt-pdf'
 
 // GET /api/orders/[id]/receipt
-//   - Customer-facing: requires the order to belong to the logged-in user.
-//   - Admin-facing: passes ?admin=1 with the admin Basic auth header.
-// Returns the PDF as application/pdf (inline — opens in browser).
+// Customer-facing requests require the order to belong to the logged-in user.
+// Admin-facing requests use ?admin=1 with admin authorization.
 export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params
 
-  // Determine caller
   const isAdmin = req.nextUrl.searchParams.get('admin') === '1'
   let customerId: string | null = null
 
@@ -21,9 +19,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
     }
   } else {
     const supabase = await getSupabaseForUser(req)
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
+    const { data: { user } } = await supabase.auth.getUser()
     if (!user) {
       return NextResponse.json({ error: 'Sign in to download receipt' }, { status: 401 })
     }
@@ -41,19 +37,9 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
   if (!order) {
     return NextResponse.json({ error: 'Order not found' }, { status: 404 })
   }
-  // Authorization: non-admin callers must own the order.
+
   if (!isAdmin && order.customerId !== customerId) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
-
-  // Receipt is only downloadable after the order has been Delivered.
-  // Admins can download at any time (for printing in the kitchen, etc.);
-  // customers must wait until their order is marked Delivered.
-  if (!isAdmin && order.status !== 'DELIVERED') {
-    return NextResponse.json(
-      { error: 'Receipt will be available once your order is delivered.' },
-      { status: 403 }
-    )
   }
 
   const receiptOrder: ReceiptOrder = {
@@ -84,7 +70,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
     status: 200,
     headers: {
       'Content-Type': 'application/pdf',
-      'Content-Disposition': `inline; filename="receipt-${order.orderNumber}.pdf"`,
+      'Content-Disposition': `attachment; filename="receipt-${order.orderNumber}.pdf"`,
       'Cache-Control': 'no-store',
     },
   })
