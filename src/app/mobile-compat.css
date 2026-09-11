@@ -1,12 +1,12 @@
 /*
  * Android "Desktop site" compatibility.
  *
- * Chrome can report a desktop-sized CSS viewport on a touch phone. Tailwind's
- * sm/md/lg breakpoints then select the desktop layout even though the user is
- * still holding a phone. MobileLayoutGuard adds .apna-mobile-device to <html>
- * for physical touch devices so the phone layout wins in that situation.
+ * Chrome can expose a wider CSS viewport on a phone when Desktop site is
+ * enabled. Tailwind then activates sm/md/lg rules even though the device is
+ * still a touch phone. MobileLayoutGuard adds .apna-mobile-device to <html>.
  */
 
+/* Keep desktop-only alternate layouts hidden on a physical phone. */
 .apna-mobile-device [class~="hidden"][class~="sm:grid"],
 .apna-mobile-device [class~="hidden"][class~="sm:flex"],
 .apna-mobile-device [class~="hidden"][class~="sm:block"],
@@ -17,12 +17,46 @@
   display: none !important;
 }
 
-/* Elements that are mobile-only in the normal Tailwind layout. */
+/* Restore the mobile-only variants that Desktop site would otherwise hide. */
 .apna-mobile-device [class~="sm:hidden"] {
   display: flex !important;
 }
 
-/* Keep product/category grids compact like the real phone layout. */
+/*
+ * Home screen horizontal rails.
+ * In Chrome Desktop site mode a phone may report ~650px CSS width instead of
+ * ~360-400px. Keep the cards/categories physically phone-sized so the rails
+ * don't look like a desktop carousel with tiny cards.
+ */
+.apna-mobile-device .no-scrollbar.flex.overflow-x-auto > .shrink-0 {
+  width: 13.75rem !important;
+}
+
+.apna-mobile-device section > .no-scrollbar.flex.overflow-x-auto {
+  gap: 0.75rem !important;
+}
+
+/* Category rail: larger touch targets and fewer visible categories. */
+.apna-mobile-device section > .no-scrollbar.flex.overflow-x-auto > button {
+  width: 6.5rem !important;
+}
+
+.apna-mobile-device section > .no-scrollbar.flex.overflow-x-auto > button > span:first-child {
+  width: 4.5rem !important;
+  height: 4.5rem !important;
+}
+
+.apna-mobile-device section > .no-scrollbar.flex.overflow-x-auto > button img {
+  width: 4rem !important;
+  height: 4rem !important;
+}
+
+/* Featured product cards: keep the intended mobile-card size. */
+.apna-mobile-device section > .no-scrollbar.flex.overflow-x-auto > .shrink-0 > * {
+  width: 100% !important;
+}
+
+/* Keep Popular Near You as the normal two-column phone grid. */
 .apna-mobile-device [class~="sm:grid-cols-2"],
 .apna-mobile-device [class~="sm:grid-cols-3"],
 .apna-mobile-device [class~="sm:grid-cols-4"],
@@ -41,14 +75,14 @@
   grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
 }
 
-/* Category grids should not replace the phone's horizontal category rail. */
+/* Category grid must never replace the phone's horizontal category rail. */
 .apna-mobile-device [class~="hidden"][class~="grid-cols-4"],
 .apna-mobile-device [class~="hidden"][class~="md:grid-cols-6"],
 .apna-mobile-device [class~="hidden"][class~="lg:grid-cols-8"] {
   display: none !important;
 }
 
-/* Restore small-screen sizing where desktop-mode media queries enlarged it. */
+/* Restore compact mobile sizing for common responsive utilities. */
 .apna-mobile-device [class~="sm:p-8"],
 .apna-mobile-device [class~="lg:p-10"] {
   padding: 1.25rem !important;
