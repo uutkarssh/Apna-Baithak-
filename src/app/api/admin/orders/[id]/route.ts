@@ -87,3 +87,21 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
 
   return NextResponse.json({ order: updated })
 }
+
+// DELETE /api/admin/orders/[id] — permanently delete an order and its
+// related order items, status history and payment attempts.
+export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  if (!isAdminAuthorized(req)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const { id } = await ctx.params
+  const existing = await db.order.findUnique({ where: { id } })
+  if (!existing) {
+    return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+  }
+
+  await db.order.delete({ where: { id } })
+
+  return NextResponse.json({ success: true, deletedOrderId: id })
+}
