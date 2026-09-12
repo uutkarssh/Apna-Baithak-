@@ -37,6 +37,7 @@ import {
   type OrderStatus,
 } from '@/lib/constants'
 import { RESTAURANT } from '@/lib/constants'
+import { toast } from 'sonner'
 
 export type AdminOrder = {
   id: string
@@ -333,10 +334,13 @@ function formatCheckName(c: string): string {
 }
 
 async function printReceipt(order: AdminOrder) {
-  // Use fetch() instead of window.open() — fetch() reliably sends same-origin
-  // cookies (the admin ab_admin cookie is sameSite=strict, which some mobile
-  // browsers drop when opening a new tab via window.open to a file-download
-  // API route). We fetch the PDF as a blob, create a blob URL, then open that.
+  // Fetch the PDF as a blob, then trigger it via a hidden <a download> click.
+  // window.open() was used before but silently gets blocked as a popup
+  // because it was called after two awaits — by then the browser no longer
+  // treats it as part of the original click gesture. <a download>.click()
+  // is not subject to that restriction and still avoids the sameSite-cookie
+  // drop that a direct <a href="/api/..."> navigation caused on some
+  // mobile browsers.
   try {
     const res = await fetch(`/api/orders/${order.id}/receipt?admin=1`, {
       credentials: 'include',
@@ -347,14 +351,15 @@ async function printReceipt(order: AdminOrder) {
     }
     const blob = await res.blob()
     const url = URL.createObjectURL(blob)
-    window.open(url, '_blank')
-    // Revoke the blob URL after 2 minutes to free memory
-    setTimeout(() => URL.revokeObjectURL(url), 120000)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `receipt-${order.orderNumber}.pdf`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 60000)
   } catch (e: any) {
-    // Fallback: if blob approach fails, try direct window.open (won't have
-    // cookie on some mobile browsers, but works on desktop)
     console.error('Receipt fetch failed:', e)
-    const url = `/api/orders/${order.id}/receipt?admin=1`
-    window.open(url, '_blank', 'width=900,height=1200')
+    toast.error(e.message || 'Failed to load receipt')
   }
 }

@@ -120,11 +120,18 @@ function findNextFont(family: 'poppins' | 'outfit', weight: '400' | '700'): Buff
 
 /**
  * Load the brand fonts from public/fonts so the receipt generator works
- * reliably in Vercel/serverless builds. Outfit is used for regular text and
- * Poppins for bold headings/prices. DejaVu remains a safe fallback.
+ * reliably in Vercel/serverless builds.
  *
- * Fallback chain: Poppins/Outfit (public/fonts/) → DejaVu (public/fonts/) →
- * DejaVu (system) → StandardFonts.Helvetica (pdf-lib built-in, never fails).
+ * NOTE: As of the ₹-glyph fix, all four TTFs in public/fonts/ are subsetted
+ * from full Google-Fonts Poppins (Regular + Bold) — both weights now have
+ * U+20B9 (₹). The Outfit-*.ttf filenames are kept for backward-compat with
+ * the candidate paths below; they contain Poppins-Regular and Poppins-Bold
+ * respectively. The receipt uses Poppins for both regular and bold text.
+ *
+ * Fallback chain: Poppins/Outfit (public/fonts/) → DejaVu (system, if
+ * present on the host) → StandardFonts.Helvetica (pdf-lib built-in, never
+ * fails to load — BUT cannot encode ₹, so the route handler must catch
+ * any throw and return a JSON 500).
  */
 function loadFonts(): { regular: Buffer; bold: Buffer } | null {
   if (fontLookupFailed) return null

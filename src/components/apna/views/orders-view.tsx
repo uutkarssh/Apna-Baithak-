@@ -113,10 +113,13 @@ function OrderTrackingCard({ order, index }: { order: Order; index: number }) {
   const [reordering, setReordering] = useState(false)
   const [downloading, setDownloading] = useState(false)
 
-  // Download receipt via fetch() + blob — not <a target="_blank"> — because
-  // mobile browsers (Chrome on Android) often drop sameSite cookies when
-  // opening a new tab to a file-download API route, causing "Sign in to
-  // download" errors. fetch() reliably sends same-origin cookies.
+  // Download receipt via fetch() + blob, then trigger via a hidden <a download>
+  // click. window.open() was tried here before but silently fails on mobile
+  // browsers because it's called after two awaits, losing the "user gesture"
+  // context that window.open() requires — the popup gets blocked with no
+  // error. A programmatic <a download> click is not treated as a popup and
+  // works reliably after async work, while still avoiding the sameSite-cookie
+  // drop that direct <a href="/api/..."> navigation caused on some browsers.
   async function downloadReceipt() {
     setDownloading(true)
     try {
@@ -129,8 +132,13 @@ function OrderTrackingCard({ order, index }: { order: Order; index: number }) {
       }
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
-      window.open(url, '_blank')
-      setTimeout(() => URL.revokeObjectURL(url), 120000)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `receipt-${order.orderNumber}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 60000)
     } catch (e: any) {
       toast.error(e.message || 'Failed to download receipt')
     } finally {

@@ -48,7 +48,21 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
     })),
   }
 
-  const pdfBytes = await buildReceiptPdf(receiptOrder)
+  // Wrap buildReceiptPdf in try/catch so a throw (e.g. font missing ₹,
+  // letterhead embed failure, etc.) becomes a JSON 500 the front-end can
+  // surface as a real error toast, instead of an HTML 500 page that the
+  // front-end cannot JSON-parse — which previously produced the misleading
+  // "Failed to load receipt" toast with no diagnostic info.
+  let pdfBytes: Uint8Array
+  try {
+    pdfBytes = await buildReceiptPdf(receiptOrder)
+  } catch (e: any) {
+    console.error(`[receipt] build failed for order ${id}:`, e)
+    return NextResponse.json(
+      { error: `Receipt generation failed: ${e?.message || 'unknown error'}` },
+      { status: 500 },
+    )
+  }
 
   return new NextResponse(pdfBytes as BodyInit, {
     status: 200,
