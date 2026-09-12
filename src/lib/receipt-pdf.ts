@@ -55,9 +55,14 @@ function loadLetterhead(): Buffer | null {
   if (lookupFailed) return null
   if (cachedLetterheadBytes) return cachedLetterheadBytes
 
+  // Try multiple candidate paths so the route works across environments:
+  //   - Local dev: process.cwd() = project root → ./public/letterhead/...
+  //   - Vercel serverless: process.cwd() = /var/task/ → ./public/letterhead/...
+  //   - Standalone build: the __dirname relative path
   const candidates = [
     path.join(process.cwd(), 'public', 'letterhead', 'letterhead.png'),
     path.join(__dirname, '..', '..', '..', 'public', 'letterhead', 'letterhead.png'),
+    path.join(__dirname, '..', '..', '..', '..', 'public', 'letterhead', 'letterhead.png'),
   ]
 
   for (const p of candidates) {
@@ -117,6 +122,9 @@ function findNextFont(family: 'poppins' | 'outfit', weight: '400' | '700'): Buff
  * Load the brand fonts from public/fonts so the receipt generator works
  * reliably in Vercel/serverless builds. Outfit is used for regular text and
  * Poppins for bold headings/prices. DejaVu remains a safe fallback.
+ *
+ * Fallback chain: Poppins/Outfit (public/fonts/) → DejaVu (public/fonts/) →
+ * DejaVu (system) → StandardFonts.Helvetica (pdf-lib built-in, never fails).
  */
 function loadFonts(): { regular: Buffer; bold: Buffer } | null {
   if (fontLookupFailed) return null
@@ -124,35 +132,43 @@ function loadFonts(): { regular: Buffer; bold: Buffer } | null {
     return { regular: cachedRegularFont, bold: cachedBoldFont }
   }
 
-  try {
-    const outfit = findNextFont('outfit', '400')
-    const poppins = findNextFont('poppins', '700')
-    if (outfit && poppins) {
-      cachedRegularFont = outfit
-      cachedBoldFont = poppins
-      return { regular: outfit, bold: poppins }
-    }
+  // Candidate paths — work in local dev (process.cwd() = project root) AND
+  // Vercel serverless (process.cwd() = /var/task/, public/ is bundled there).
+  const fontCandidates = [
+    {
+      regular: path.join(process.cwd(), 'public', 'fonts', 'Outfit-Regular.ttf'),
+      bold: path.join(process.cwd(), 'public', 'fonts', 'Poppins-Bold.ttf'),
+    },
+    {
+      regular: path.join(__dirname, '..', '..', '..', 'public', 'fonts', 'Outfit-Regular.ttf'),
+      bold: path.join(__dirname, '..', '..', '..', 'public', 'fonts', 'Poppins-Bold.ttf'),
+    },
+    {
+      regular: path.join(__dirname, '..', '..', '..', '..', 'public', 'fonts', 'Outfit-Regular.ttf'),
+      bold: path.join(__dirname, '..', '..', '..', '..', 'public', 'fonts', 'Poppins-Bold.ttf'),
+    },
+    // DejaVu fallback (bundled in repo)
+    {
+      regular: path.join(process.cwd(), 'public', 'fonts', 'DejaVuSans.ttf'),
+      bold: path.join(process.cwd(), 'public', 'fonts', 'DejaVuSans-Bold.ttf'),
+    },
+    // System DejaVu fallback (some Linux envs)
+    {
+      regular: '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+      bold: '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+    },
+  ]
 
-    const candidates = [
-      {
-        regular: path.join(process.cwd(), 'public', 'fonts', 'DejaVuSans.ttf'),
-        bold: path.join(process.cwd(), 'public', 'fonts', 'DejaVuSans-Bold.ttf'),
-      },
-      {
-        regular: '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
-        bold: '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
-      },
-    ]
-
-    for (const c of candidates) {
+  for (const c of fontCandidates) {
+    try {
       if (fs.existsSync(c.regular) && fs.existsSync(c.bold)) {
         cachedRegularFont = fs.readFileSync(c.regular)
         cachedBoldFont = fs.readFileSync(c.bold)
         return { regular: cachedRegularFont, bold: cachedBoldFont }
       }
+    } catch {
+      // try next
     }
-  } catch {
-    // fall back to standard PDF fonts
   }
 
   fontLookupFailed = true

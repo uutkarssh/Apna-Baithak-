@@ -1,7 +1,6 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  output: "standalone",
   reactStrictMode: false,
   // Allow the sandbox preview gateway origin to load Next.js assets.
   allowedDevOrigins: ["*.space-z.ai"],

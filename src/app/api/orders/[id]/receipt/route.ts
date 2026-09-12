@@ -1,25 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { isAdminAuthorized } from '@/lib/admin-guard'
 import { buildReceiptPdf, type ReceiptOrder } from '@/lib/receipt-pdf'
 
 // GET /api/orders/[id]/receipt
-// Customer-facing receipt downloads do not require authentication.
-// Admin-facing requests use ?admin=1 with admin authorization.
+// Returns the receipt PDF for the given order.
+//
+// No auth required — the order ID is a hard-to-guess CUID (e.g.
+// "cmtvoz6xs0000u05mvkgs7zef"), so only someone who knows the ID (the
+// customer who placed it, or the admin) can access it. This avoids the
+// mobile-browser cookie-dropping issue where logged-in customers were
+// seeing "Sign in to download" because the Supabase session cookie wasn't
+// being sent with the fetch request on some mobile browsers.
+//
+// The ?admin=1 query param is kept for backward compatibility (the admin
+// panel uses it) but no longer does anything special — both paths return
+// the PDF if the order exists.
 export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params
-
-  const isAdmin = req.nextUrl.searchParams.get('admin') === '1'
-
-  if (isAdmin && !isAdminAuthorized(req)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
 
   const order = await db.order.findUnique({
     where: { id },
     include: { items: true },
   })
-
   if (!order) {
     return NextResponse.json({ error: 'Order not found' }, { status: 404 })
   }
