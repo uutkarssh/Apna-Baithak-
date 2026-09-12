@@ -49,22 +49,49 @@ export type ReceiptOrder = {
 }
 
 let cachedLetterheadBytes: Buffer | null = null
-let lookupFailed = false
 
-function loadLetterhead(): Buffer | null {
-  if (lookupFailed) return null
+/**
+ * Resolve the base URL for fetching public/ assets over HTTP.
+ *
+ * On Vercel serverless, `public/` files are served by the CDN and are NOT
+ * available via `fs.readFile()` from inside the function. So when the
+ * filesystem lookups fail (which they always do on Vercel), we fall back
+ * to fetching the asset over HTTP from the deployment's own URL.
+ *
+ * Vercel auto-populates several env vars at runtime:
+ *   - `VERCEL_URL`                         — per-deployment URL (server-only,
+ *                                            set at runtime in Lambda)
+ *   - `NEXT_PUBLIC_VERCEL_PROJECT_PRODUCTION_URL` — production URL
+ *                                            (NEXT_PUBLIC_*, inlined at
+ *                                            build time — usually fine for
+ *                                            production builds on Vercel)
+ * In local dev we fall back to localhost:3000.
+ */
+function getPublicBaseUrl(): string {
+  const candidates = [
+    process.env.NEXT_PUBLIC_VERCEL_PROJECT_PRODUCTION_URL,
+    process.env.VERCEL_URL,
+    process.env.NEXT_PUBLIC_VERCEL_URL,
+    process.env.NEXT_PUBLIC_SITE_URL,
+    'http://localhost:3000',
+  ].filter(Boolean) as string[]
+  const host = candidates[0]!
+  if (host.startsWith('http://') || host.startsWith('https://')) {
+    return host.replace(/\/$/, '')
+  }
+  return `https://${host}`
+}
+
+async function loadLetterhead(): Promise<Buffer | null> {
   if (cachedLetterheadBytes) return cachedLetterheadBytes
 
-  // Try multiple candidate paths so the route works across environments:
-  //   - Local dev: process.cwd() = project root → ./public/letterhead/...
-  //   - Vercel serverless: process.cwd() = /var/task/ → ./public/letterhead/...
-  //   - Standalone build: the __dirname relative path
+  // 1. Try local file system first (works in dev and self-hosted with
+  //    output: 'standalone' + cp -r public into the standalone bundle).
   const candidates = [
     path.join(process.cwd(), 'public', 'letterhead', 'letterhead.png'),
     path.join(__dirname, '..', '..', '..', 'public', 'letterhead', 'letterhead.png'),
     path.join(__dirname, '..', '..', '..', '..', 'public', 'letterhead', 'letterhead.png'),
   ]
-
   for (const p of candidates) {
     try {
       if (fs.existsSync(p)) {
@@ -75,13 +102,27 @@ function loadLetterhead(): Buffer | null {
       // try next
     }
   }
-  lookupFailed = true
+
+  // 2. Fallback: HTTP fetch from the deployment URL. This is what makes
+  //    the receipt work on Vercel serverless — `public/` is on the CDN,
+  //    not in the function's filesystem.
+  try {
+    const url = `${getPublicBaseUrl()}/letterhead/letterhead.png`
+    const res = await fetch(url)
+    if (res.ok) {
+      const ab = await res.arrayBuffer()
+      cachedLetterheadBytes = Buffer.from(ab)
+      return cachedLetterheadBytes
+    }
+  } catch {
+    // network error, wrong host, etc. — give up.
+  }
+
   return null
 }
 
 let cachedRegularFont: Buffer | null = null
 let cachedBoldFont: Buffer | null = null
-let fontLookupFailed = false
 
 function findNextFont(family: 'poppins' | 'outfit', weight: '400' | '700'): Buffer | null {
   const roots = [
@@ -119,53 +160,52 @@ function findNextFont(family: 'poppins' | 'outfit', weight: '400' | '700'): Buff
 }
 
 /**
- * Load the brand fonts from public/fonts so the receipt generator works
- * reliably in Vercel/serverless builds.
+ * Load the brand fonts so the receipt generator works on every deployment.
  *
- * NOTE: As of the ₹-glyph fix, all four TTFs in public/fonts/ are subsetted
- * from full Google-Fonts Poppins (Regular + Bold) — both weights now have
+ * Strategy:
+ *   1. Try the local filesystem (works in local dev and on self-hosted
+ *      servers that bundle `public/` into the function bundle — e.g. when
+ *      `output: 'standalone'` is set and the build script copies `public/`
+ *      into `.next/standalone/`).
+ *   2. Fall back to HTTP fetch from the deployment's own URL — this is what
+ *      makes it work on Vercel serverless, where `public/` is on the CDN
+ *      and not in the function's filesystem.
+ *
+ * NOTE: As of the ₹-glyph fix, all four TTFs in `public/fonts/` are subsetted
+ * from full Google-Fonts Poppins (Regular + Bold) — both weights have
  * U+20B9 (₹). The Outfit-*.ttf filenames are kept for backward-compat with
  * the candidate paths below; they contain Poppins-Regular and Poppins-Bold
  * respectively. The receipt uses Poppins for both regular and bold text.
  *
- * Fallback chain: Poppins/Outfit (public/fonts/) → DejaVu (system, if
- * present on the host) → StandardFonts.Helvetica (pdf-lib built-in, never
- * fails to load — BUT cannot encode ₹, so the route handler must catch
- * any throw and return a JSON 500).
+ * If both filesystem and HTTP fetch fail, returns null — the caller falls
+ * back to StandardFonts.Helvetica, which CANNOT encode ₹. The route
+ * handler's try/catch catches that throw and returns a JSON 500.
  */
-function loadFonts(): { regular: Buffer; bold: Buffer } | null {
-  if (fontLookupFailed) return null
+async function loadFonts(): Promise<{ regular: Buffer; bold: Buffer } | null> {
   if (cachedRegularFont && cachedBoldFont) {
     return { regular: cachedRegularFont, bold: cachedBoldFont }
   }
 
-  // Candidate paths — work in local dev (process.cwd() = project root) AND
-  // Vercel serverless (process.cwd() = /var/task/, public/ is bundled there).
+  // 1. Try local file system candidates.
   const fontCandidates = [
     {
       regular: path.join(process.cwd(), 'public', 'fonts', 'Outfit-Regular.ttf'),
-      bold: path.join(process.cwd(), 'public', 'fonts', 'Poppins-Bold.ttf'),
+      bold:    path.join(process.cwd(), 'public', 'fonts', 'Poppins-Bold.ttf'),
     },
     {
       regular: path.join(__dirname, '..', '..', '..', 'public', 'fonts', 'Outfit-Regular.ttf'),
-      bold: path.join(__dirname, '..', '..', '..', 'public', 'fonts', 'Poppins-Bold.ttf'),
+      bold:    path.join(__dirname, '..', '..', '..', 'public', 'fonts', 'Poppins-Bold.ttf'),
     },
     {
       regular: path.join(__dirname, '..', '..', '..', '..', 'public', 'fonts', 'Outfit-Regular.ttf'),
-      bold: path.join(__dirname, '..', '..', '..', '..', 'public', 'fonts', 'Poppins-Bold.ttf'),
+      bold:    path.join(__dirname, '..', '..', '..', '..', 'public', 'fonts', 'Poppins-Bold.ttf'),
     },
-    // DejaVu fallback (bundled in repo)
-    {
-      regular: path.join(process.cwd(), 'public', 'fonts', 'DejaVuSans.ttf'),
-      bold: path.join(process.cwd(), 'public', 'fonts', 'DejaVuSans-Bold.ttf'),
-    },
-    // System DejaVu fallback (some Linux envs)
+    // System DejaVu fallback (some Linux envs — but not Vercel Lambda)
     {
       regular: '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
-      bold: '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+      bold:    '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
     },
   ]
-
   for (const c of fontCandidates) {
     try {
       if (fs.existsSync(c.regular) && fs.existsSync(c.bold)) {
@@ -178,7 +218,23 @@ function loadFonts(): { regular: Buffer; bold: Buffer } | null {
     }
   }
 
-  fontLookupFailed = true
+  // 2. Fallback: HTTP fetch from the deployment URL (Vercel serverless).
+  try {
+    const base = getPublicBaseUrl()
+    const [regRes, boldRes] = await Promise.all([
+      fetch(`${base}/fonts/Outfit-Regular.ttf`),
+      fetch(`${base}/fonts/Poppins-Bold.ttf`),
+    ])
+    if (regRes.ok && boldRes.ok) {
+      const [regAb, boldAb] = await Promise.all([regRes.arrayBuffer(), boldRes.arrayBuffer()])
+      cachedRegularFont = Buffer.from(regAb)
+      cachedBoldFont = Buffer.from(boldAb)
+      return { regular: cachedRegularFont, bold: cachedBoldFont }
+    }
+  } catch {
+    // network error — give up.
+  }
+
   return null
 }
 
@@ -208,11 +264,11 @@ export async function buildReceiptPdf(order: ReceiptOrder): Promise<Uint8Array> 
 
   pdf.registerFontkit(fontkit)
 
-  const fonts = loadFonts()
+  const fonts = await loadFonts()
   const regular = fonts ? await pdf.embedFont(fonts.regular, { subset: true }) : await pdf.embedFont(StandardFonts.Helvetica)
   const bold = fonts ? await pdf.embedFont(fonts.bold, { subset: true }) : await pdf.embedFont(StandardFonts.HelveticaBold)
 
-  const letterheadBytes = loadLetterhead()
+  const letterheadBytes = await loadLetterhead()
   let letterheadImg: Awaited<ReturnType<typeof pdf.embedPng>> | null = null
   if (letterheadBytes) {
     try { letterheadImg = await pdf.embedPng(letterheadBytes) } catch { letterheadImg = null }
