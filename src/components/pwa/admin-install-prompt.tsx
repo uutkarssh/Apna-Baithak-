@@ -3,52 +3,51 @@
 import { useEffect, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Download, X, Smartphone } from 'lucide-react'
+import { Download, X, ShieldCheck } from 'lucide-react'
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>
 }
 
-const DISMISS_KEY = 'apna-baithak-install-dismissed'
+// Separate localStorage key from the customer install prompt so admin and
+// customer dismissals don't interfere with each other.
+const DISMISS_KEY = 'apna-baithak-admin-install-dismissed'
 const DISMISS_COOLDOWN_MS = 3 * 24 * 60 * 60 * 1000 // 3 days
-const SHOW_DELAY_MS = 4000 // Show 4s after the user lands
+const SHOW_DELAY_MS = 4000 // Show 4s after the user lands on /admin
 
 /**
- * Customer PWA install prompt. Listens for the browser's `beforeinstallprompt`
- * event (fired when the browser determines the site is installable), then
- * shows a branded, dismissible banner inviting the user to install the
- * CUSTOMER app.
+ * Admin PWA install prompt. Listens for the browser's `beforeinstallprompt`
+ * event, then shows a branded banner inviting the admin to install the
+ * dashboard as a standalone app.
  *
- * Behavior:
- * - Only shows if the browser supports `beforeinstallprompt` (Chrome, Edge,
- *   etc. — NOT iOS Safari, which has its own "Add to Home Screen" flow).
- * - Shows 4 seconds after the user lands on the Home screen (not instantly).
- * - Dismissible — if dismissed, won't reappear for 3 days (stored in
- *   localStorage with a timestamp).
- * - If accepted, calls `event.prompt()` which shows the native install dialog.
- * - If the app is already installed (display-mode: standalone), never shows.
+ * Behavior mirrors the customer install-prompt.tsx but:
+ *   - Uses admin-specific branding (ShieldCheck icon, "Admin" wording)
+ *   - Uses a separate localStorage dismiss key
+ *   - Only renders when on /admin/* routes (extra safety — the component
+ *     is only mounted via /src/app/admin/layout.tsx, but the pathname
+ *     check guards against accidental imports from other layouts)
  *
- * IMPORTANT: this component is mounted in the ROOT layout, so it would
- * also fire on /admin — but the admin route has its own AdminInstallPrompt
- * with admin branding. We early-return when pathname starts with '/admin'
- * to avoid both prompts showing simultaneously on the admin dashboard.
+ * Browser support notes:
+ *   - Chrome/Edge on Android & desktop: fires `beforeinstallprompt`. ✅
+ *   - iOS Safari: does NOT fire `beforeinstallprompt`. iOS users must
+ *     use Share → "Add to Home Screen" manually. The admin manifest + icons
+ *     will still be picked up correctly. ❌ (no auto-prompt)
+ *   - Firefox: does NOT fire `beforeinstallprompt`. Same as iOS — manual
+ *     "Add to Home Screen" via the page menu. ❌
  */
-export function InstallPrompt() {
+export function AdminInstallPrompt() {
   const pathname = usePathname()
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null)
   const [visible, setVisible] = useState(false)
   const [installing, setInstalling] = useState(false)
 
   useEffect(() => {
-    // Don't show the customer install prompt on admin routes — the admin
-    // route has its own AdminInstallPrompt component with admin branding.
-    if (pathname?.startsWith('/admin')) return
+    // Only render the prompt when actually on /admin routes.
+    if (!pathname?.startsWith('/admin')) return
 
     // Don't show if already installed (running in standalone mode)
     if (window.matchMedia('(display-mode: standalone)').matches) return
-    // iOS Safari doesn't support beforeinstallprompt — skip entirely there.
-    // (iOS users get the "Add to Home Screen" option from the Share menu.)
 
     // Check if the user dismissed recently
     try {
@@ -59,12 +58,8 @@ export function InstallPrompt() {
     }
 
     const handler = (e: Event) => {
-      // Prevent the default mini-info bar
       e.preventDefault()
-      // Stash the event so it can be triggered later from the custom button
       setDeferredPrompt(e as BeforeInstallPromptEvent)
-      // Show the custom prompt after a short delay (so it doesn't feel
-      // aggressive on first paint)
       setTimeout(() => setVisible(true), SHOW_DELAY_MS)
     }
 
@@ -79,11 +74,9 @@ export function InstallPrompt() {
       await deferredPrompt.prompt()
       const choice = await deferredPrompt.userChoice
       if (choice.outcome === 'accepted') {
-        // Installed — hide the prompt permanently
         setVisible(false)
         setDeferredPrompt(null)
       } else {
-        // Dismissed — set the cooldown timestamp
         try {
           localStorage.setItem(DISMISS_KEY, String(Date.now()))
         } catch {}
@@ -112,22 +105,24 @@ export function InstallPrompt() {
           className="fixed inset-x-0 bottom-0 z-50 mx-auto flex max-w-md items-stretch justify-center px-4 pb-4 landscape:hidden"
         >
           <div className="flex w-full items-center gap-3 rounded-2xl border border-border bg-card p-3 shadow-2xl">
-            {/* Icon */}
-            <span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-brand-softer">
-              <Smartphone className="h-6 w-6 text-brand" />
+            {/* Icon — admin-branded (ShieldCheck in dark-red gradient) */}
+            <span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-red-500 to-orange-500 text-white">
+              <ShieldCheck className="h-6 w-6" />
             </span>
             {/* Text */}
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-bold text-foreground">Install Apna Baithak</p>
+              <p className="text-sm font-bold text-foreground">
+                Install Apna Baithak Admin
+              </p>
               <p className="text-xs text-muted-foreground">
-                Add to your home screen for faster ordering.
+                Add the admin dashboard to your home screen for faster access.
               </p>
             </div>
             {/* Install button */}
             <button
               onClick={handleInstall}
               disabled={installing}
-              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-brand px-3 py-2 text-xs font-bold text-brand-foreground disabled:opacity-50"
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-gradient-to-r from-red-500 to-orange-500 px-3 py-2 text-xs font-bold text-white disabled:opacity-50"
             >
               <Download className="h-3.5 w-3.5" />
               {installing ? 'Installing…' : 'Install'}
