@@ -105,12 +105,24 @@ export async function POST(req: NextRequest) {
   const gstAndCharges = Math.round((itemTotal + handlingFee + deliveryFee) * FEES.gstRate)
   const totalAmount = itemTotal + handlingFee + deliveryFee + gstAndCharges
 
-  // human-friendly order number: AB-YYYY-000N based on this year's count
-  const yearStart = new Date(new Date().getFullYear(), 0, 1)
-  const yearCount = await db.order.count({
-    where: { createdAt: { gte: yearStart } },
+  // human-friendly order number: AB-YYYY-000N
+  // IMPORTANT: use MAX(orderNumber) + 1, NOT COUNT(*) + 1. Count-based
+  // generation breaks when orders are deleted — count returns N, but the
+  // highest existing number may be N+k, so count+1 collides with an
+  // existing order's unique constraint, the create() throws, the route
+  // returns 500 with HTML, and the customer sees "Failed to place order".
+  // See: scripts/diagnose-checkout.ts for the diagnostic that proved this.
+  const year = new Date().getFullYear()
+  const prefix = `AB-${year}-`
+  const lastOrder = await db.order.findFirst({
+    where: { orderNumber: { startsWith: prefix } },
+    orderBy: { orderNumber: 'desc' },
+    select: { orderNumber: true },
   })
-  const orderNumber = orderNumberFromSeq(yearCount + 1)
+  const lastSeq = lastOrder
+    ? (parseInt(lastOrder.orderNumber.slice(prefix.length), 10) || 0)
+    : 0
+  const orderNumber = orderNumberFromSeq(lastSeq + 1)
 
   const addressLine = [
     address.houseFlat,
@@ -121,31 +133,58 @@ export async function POST(req: NextRequest) {
     .filter(Boolean)
     .join(', ')
 
-  const order = await db.order.create({
-    data: {
-      orderNumber,
-      customerId: customer.id,
-      addressId: address.id,
-      customerName: customer.name ?? customer.email.split('@')[0],
-      customerPhone: customer.phone,
-      addressLine,
-      status: 'NEW',
-      paymentMode,
-      paymentStatus: paymentMode === 'UPI' ? 'PENDING' : 'PENDING',
-      itemTotal,
-      handlingFee,
-      deliveryFee,
-      gstAndCharges,
-      totalAmount,
-      distanceKm: Number(distKm.toFixed(2)),
-      notes: notes || null,
-      items: { create: orderItemsData },
-      statusHistory: {
-        create: { status: 'NEW', note: 'Order placed by customer' },
-      },
-    },
-    include: { items: true },
-  })
+  // Create the order. Retry up to 5 times on unique-constraint violation
+  // (P2002) — handles the rare race condition where two customers check
+  // out at the same millisecond and both compute the same orderNumber.
+  // Each retry bumps the sequence by 1 and tries again.
+  let order
+  let attempts = 0
+  while (attempts < 5) {
+    const candidateNumber = attempts === 0
+      ? orderNumber
+      : orderNumberFromSeq(lastSeq + 1 + attempts)
+    try {
+      order = await db.order.create({
+        data: {
+          orderNumber: candidateNumber,
+          customerId: customer.id,
+          addressId: address.id,
+          customerName: customer.name ?? customer.email.split('@')[0],
+          customerPhone: customer.phone,
+          addressLine,
+          status: 'NEW',
+          paymentMode,
+          paymentStatus: paymentMode === 'UPI' ? 'PENDING' : 'PENDING',
+          itemTotal,
+          handlingFee,
+          deliveryFee,
+          gstAndCharges,
+          totalAmount,
+          distanceKm: Number(distKm.toFixed(2)),
+          notes: notes || null,
+          items: { create: orderItemsData },
+          statusHistory: {
+            create: { status: 'NEW', note: 'Order placed by customer' },
+          },
+        },
+        include: { items: true },
+      })
+      break
+    } catch (e: any) {
+      // P2002 = Prisma unique constraint violation
+      if (e?.code === 'P2002' && attempts < 4) {
+        attempts++
+        continue
+      }
+      throw e
+    }
+  }
+  if (!order) {
+    return NextResponse.json(
+      { error: 'Could not generate a unique order number after multiple attempts. Please try again.' },
+      { status: 500 },
+    )
+  }
 
   // Fire Telegram new-order notification (non-blocking — don't fail the
   // checkout if Telegram is down)
