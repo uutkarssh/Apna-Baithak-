@@ -111,6 +111,32 @@ function OrderTrackingCard({ order, index }: { order: Order; index: number }) {
   const addItem = useCart((s) => s.addItem)
   const setView = useApp((s) => s.setView)
   const [reordering, setReordering] = useState(false)
+  const [downloading, setDownloading] = useState(false)
+
+  // Download receipt via fetch() + blob — not <a target="_blank"> — because
+  // mobile browsers (Chrome on Android) often drop sameSite cookies when
+  // opening a new tab to a file-download API route, causing "Sign in to
+  // download" errors. fetch() reliably sends same-origin cookies.
+  async function downloadReceipt() {
+    setDownloading(true)
+    try {
+      const res = await fetch(`/api/orders/${order.id}/receipt`, {
+        credentials: 'include',
+      })
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}))
+        throw new Error(j.error || 'Failed to load receipt')
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      window.open(url, '_blank')
+      setTimeout(() => URL.revokeObjectURL(url), 120000)
+    } catch (e: any) {
+      toast.error(e.message || 'Failed to download receipt')
+    } finally {
+      setDownloading(false)
+    }
+  }
 
   function reorder() {
     setReordering(true)
@@ -326,20 +352,19 @@ function OrderTrackingCard({ order, index }: { order: Order; index: number }) {
                 <RefreshCw className={`h-3.5 w-3.5 ${reordering ? 'animate-spin' : ''}`} />
                 {reordering ? 'Adding...' : 'Reorder'}
               </button>
-              <a
-                href={`/api/orders/${order.id}/receipt`}
-                target="_blank"
-                rel="noopener noreferrer"
+              <button
+                onClick={downloadReceipt}
+                disabled={!isDelivered || downloading}
                 className={`flex flex-1 items-center justify-center gap-2 rounded-xl border py-2.5 text-xs font-bold ${
                   isDelivered
                     ? 'border-border text-foreground hover:bg-muted'
-                    : 'pointer-events-none border-border/40 text-muted-foreground/40'
+                    : 'border-border/40 text-muted-foreground/40'
                 }`}
-                aria-disabled={!isDelivered}
                 title={isDelivered ? 'Download receipt' : 'Receipt available after delivery'}
               >
-                <Download className="h-3.5 w-3.5" /> Receipt
-              </a>
+                <Download className={`h-3.5 w-3.5 ${downloading ? 'animate-bounce' : ''}`} />{' '}
+                {downloading ? 'Loading…' : 'Receipt'}
+              </button>
             </div>
 
             {/* Rating section for delivered orders */}
