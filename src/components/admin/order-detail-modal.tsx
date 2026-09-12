@@ -332,7 +332,29 @@ function formatCheckName(c: string): string {
   return map[c] || c
 }
 
-function printReceipt(order: AdminOrder) {
-  const url = `/api/orders/${order.id}/receipt?admin=1`
-  window.open(url, '_blank', 'width=900,height=1200')
+async function printReceipt(order: AdminOrder) {
+  // Use fetch() instead of window.open() — fetch() reliably sends same-origin
+  // cookies (the admin ab_admin cookie is sameSite=strict, which some mobile
+  // browsers drop when opening a new tab via window.open to a file-download
+  // API route). We fetch the PDF as a blob, create a blob URL, then open that.
+  try {
+    const res = await fetch(`/api/orders/${order.id}/receipt?admin=1`, {
+      credentials: 'include',
+    })
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}))
+      throw new Error(j.error || 'Failed to load receipt')
+    }
+    const blob = await res.blob()
+    const url = URL.createObjectURL(blob)
+    window.open(url, '_blank')
+    // Revoke the blob URL after 2 minutes to free memory
+    setTimeout(() => URL.revokeObjectURL(url), 120000)
+  } catch (e: any) {
+    // Fallback: if blob approach fails, try direct window.open (won't have
+    // cookie on some mobile browsers, but works on desktop)
+    console.error('Receipt fetch failed:', e)
+    const url = `/api/orders/${order.id}/receipt?admin=1`
+    window.open(url, '_blank', 'width=900,height=1200')
+  }
 }
