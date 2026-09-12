@@ -9,8 +9,8 @@ const PAGE_W = 595.28
 const PAGE_H = 841.89
 
 // ====== Safe zones for the current letterhead ======
-const HEADER_ZONE = PAGE_H * 0.28
-const FOOTER_ZONE = PAGE_H * 0.25
+const HEADER_ZONE = PAGE_H * 0.24
+const FOOTER_ZONE = PAGE_H * 0.20
 const CONTENT_TOP = PAGE_H - HEADER_ZONE
 const CONTENT_BOTTOM = FOOTER_ZONE
 const CONTENT_HEIGHT = CONTENT_TOP - CONTENT_BOTTOM
@@ -80,8 +80,8 @@ let fontLookupFailed = false
 
 function findNextFont(family: 'poppins' | 'outfit', weight: '400' | '700'): Buffer | null {
   const roots = [
-    path.join(process.cwd(), '.next', 'static', 'media'),
     path.join(process.cwd(), 'public', 'fonts'),
+    path.join(process.cwd(), '.next', 'static', 'media'),
   ]
 
   for (const root of roots) {
@@ -100,7 +100,7 @@ function findNextFont(family: 'poppins' | 'outfit', weight: '400' | '700'): Buff
           if (
             name.includes(family) &&
             (name.includes(`-${weight}-`) || name.includes(`_${weight}_`) || name.includes(weight)) &&
-            /\.(woff2?|ttf|otf)$/i.test(name)
+            /\.(ttf|otf|woff2?)$/i.test(name)
           ) {
             return fs.readFileSync(full)
           }
@@ -114,9 +114,9 @@ function findNextFont(family: 'poppins' | 'outfit', weight: '400' | '700'): Buff
 }
 
 /**
- * Use the same brand typography as the website when Next has emitted the
- * Google fonts into .next/static/media: Outfit for normal text and Poppins
- * for bold headings/prices. DejaVu remains a safe build-time fallback.
+ * Load the brand fonts from public/fonts so the receipt generator works
+ * reliably in Vercel/serverless builds. Outfit is used for regular text and
+ * Poppins for bold headings/prices. DejaVu remains a safe fallback.
  */
 function loadFonts(): { regular: Buffer; bold: Buffer } | null {
   if (fontLookupFailed) return null
@@ -280,7 +280,7 @@ export async function buildReceiptPdf(order: ReceiptOrder): Promise<Uint8Array> 
   cursorY -= 4
   const totalHeight = 24
   if (cursorY - totalHeight < CONTENT_BOTTOM + 18) { page = newPageWithLetterhead(); cursorY = CONTENT_TOP - 8 }
-  page.drawRectangle({ x: MARGIN_X, y: cursorY - totalHeight, width: CONTENT_WIDTH, height: totalHeight, color: rgb(0xff, 0xed, 0xe5), borderColor: BRAND_ORANGE, borderWidth: 1 })
+  page.drawRectangle({ x: MARGIN_X, y: cursorY - totalHeight, width: CONTENT_WIDTH, height: totalHeight, color: rgb(0xff / 0xff, 0xed / 0xff, 0xe5 / 0xff), borderColor: BRAND_ORANGE, borderWidth: 1 })
   const totalValStr = rupees(order.totalAmount)
   const totalValW = bold.widthOfTextAtSize(totalValStr, 12)
   page.drawText('TOTAL', { x: MARGIN_X + CONTENT_WIDTH - totalValW - 55, y: cursorY - 16, size: 12, font: bold, color: DARK })
