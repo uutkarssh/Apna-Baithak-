@@ -1,45 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { getSupabaseForUser } from '@/lib/supabase-server'
 import { isAdminAuthorized } from '@/lib/admin-guard'
 import { buildReceiptPdf, type ReceiptOrder } from '@/lib/receipt-pdf'
 
 // GET /api/orders/[id]/receipt
-// Customer-facing requests require the order to belong to the logged-in user.
+// Customer-facing receipt downloads do not require authentication.
 // Admin-facing requests use ?admin=1 with admin authorization.
 export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params
 
   const isAdmin = req.nextUrl.searchParams.get('admin') === '1'
-  let customerId: string | null = null
 
-  if (isAdmin) {
-    if (!isAdminAuthorized(req)) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-  } else {
-    const supabase = await getSupabaseForUser(req)
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) {
-      return NextResponse.json({ error: 'Sign in to download receipt' }, { status: 401 })
-    }
-    const customer = await db.customer.findUnique({ where: { supabaseUserId: user.id } })
-    if (!customer) {
-      return NextResponse.json({ error: 'Customer not found' }, { status: 404 })
-    }
-    customerId = customer.id
+  if (isAdmin && !isAdminAuthorized(req)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   const order = await db.order.findUnique({
     where: { id },
     include: { items: true },
   })
+
   if (!order) {
     return NextResponse.json({ error: 'Order not found' }, { status: 404 })
-  }
-
-  if (!isAdmin && order.customerId !== customerId) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
   const receiptOrder: ReceiptOrder = {
